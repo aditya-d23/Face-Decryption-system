@@ -159,11 +159,7 @@ def blur_faces(image_path):
                 face_index = len(face_regions)  # 1-based indexing for buttons
                 hash_map[face_index] = M
                 policy_str = policies[(face_index - 1) % len(policies)]
-                start_time = time.perf_counter()
                 ct = cpabe.encrypt(pk, M, policy_str)
-                end_time = time.perf_counter()
-                encryption_time = (end_time - start_time) * 1000
-                print(f'The encryption time is {encryption_time}')
                 ciphertext_map.append(ct)
 
     # Sort faces and update display
@@ -204,11 +200,7 @@ def unblur_face(face_number):
 
     # Generate user's secret key
     try:
-        start_time = time.perf_counter()
         sk = cpabe.keygen(pk, mk, attribute_list)
-        end_time = time.perf_counter()
-        keygen_time = (end_time - start_time) * 1000
-        print(f'the keygen time is {keygen_time}')
         print(f"Generated Secret Key for face {face_number}: {sk}")
     except Exception as e:
         messagebox.showerror("Error", f"Key generation failed:\n{str(e)}")
@@ -216,11 +208,7 @@ def unblur_face(face_number):
 
     # Attempt to decrypt the ciphertext
     try:
-        start_time = time.perf_counter()
         rec_msg = cpabe.decrypt(pk, sk, ct)
-        end_time = time.perf_counter()
-        decryption_time = (end_time - start_time) * 1000
-        print(f'The decryption time is {decryption_time}')
         print(f"Decrypted message for face {face_number}: {rec_msg}")
     except Exception as e:
         messagebox.showerror("Error", f"Decryption failed:\n{str(e)}")
