@@ -27,7 +27,7 @@ blurred_image = None
 
 # New Maps to store hash values and ciphertexts
 hash_map = {}
-ciphertext_map = {}
+ciphertext_map = []
 
 # Function to initialize CP-ABE scheme
 def initialize_cpabe():
@@ -41,85 +41,176 @@ class CPabe_BSW07(ABEnc):
         global util, group
         util = SecretUtil(groupObj, verbose=False)
         group = groupObj
-
+        
+        # Initialize timing accumulators and counters
         self.pairing_time = 0.0
         self.exponentiation_time = 0.0
         self.multiplication_time = 0.0
+        
+        self.pairing_count = 0
+        self.exponentiation_count = 0
+        self.multiplication_count = 0
 
     def setup(self):
+        # Exponentiation: g = group.random(G1), gp = group.random(G2)
         start_time = time.perf_counter()
-        g, gp = group.random(G1), group.random(G2)
+        g = group.random(G1)
+        gp = group.random(G2)
         end_time = time.perf_counter()
         self.exponentiation_time += end_time - start_time
+        self.exponentiation_count += 2  # Two exponentiations
 
+        # Exponentiation: alpha, beta
         start_time = time.perf_counter()
         alpha, beta = group.random(ZR), group.random(ZR)
         end_time = time.perf_counter()
         self.exponentiation_time += end_time - start_time
-        g.initPP()
-        gp.initPP()
+        self.exponentiation_count += 2  # Two exponentiations
 
+        # Exponentiation: h = g ** beta, f = g ** (~beta)
         start_time = time.perf_counter()
         h = g ** beta
         f = g ** (~beta)
         end_time = time.perf_counter()
         self.exponentiation_time += end_time - start_time
+        self.exponentiation_count += 2  # Two exponentiations
 
+        # Exponentiation: gp_alpha = gp ** alpha
         start_time = time.perf_counter()
-        e_gg_alpha = pair(g, gp ** alpha)
+        gp_alpha = gp ** alpha
+        end_time = time.perf_counter()
+        self.exponentiation_time += end_time - start_time
+        self.exponentiation_count += 1  # One exponentiation
+
+        # Pairing: e_gg_alpha = pair(g, gp_alpha)
+        start_time = time.perf_counter()
+        pairing_result = pair(g, gp_alpha)
         end_time = time.perf_counter()
         self.pairing_time += end_time - start_time
-        pk = {'g': g, 'g2': gp, 'h': h, 'f': f, 'e_gg_alpha': e_gg_alpha}
-        mk = {'beta': beta, 'g2_alpha': gp ** alpha}
+        self.pairing_count += 1  # One pairing
+
+        pk = {'g': g, 'g2': gp, 'h': h, 'f': f, 'e_gg_alpha': pairing_result}
+        mk = {'beta': beta, 'g2_alpha': gp_alpha}
+
         return (pk, mk)
 
     def keygen(self, pk, mk, S):
+        # Exponentiation: r = group.random()
         start_time = time.perf_counter()
         r = group.random()
         end_time = time.perf_counter()
         self.exponentiation_time += end_time - start_time
+        self.exponentiation_count += 1  # One exponentiation
+
+        # Exponentiation: g_r = pk['g2'] ** r
         start_time = time.perf_counter()
         g_r = pk['g2'] ** r
         end_time = time.perf_counter()
         self.exponentiation_time += end_time - start_time
+        self.exponentiation_count += 1  # One exponentiation
+
+        # Multiplication: D_mult = mk['g2_alpha'] * g_r
         start_time = time.perf_counter()
-        D = (mk['g2_alpha'] * g_r) ** (1 / mk['beta'])
+        D_mult = mk['g2_alpha'] * g_r
         end_time = time.perf_counter()
         self.multiplication_time += end_time - start_time
+        self.multiplication_count += 1  # One multiplication
+
+        # Exponentiation: D = D_mult ** (1 / mk['beta'])
+        start_time = time.perf_counter()
+        D = D_mult ** (1 / mk['beta'])
+        end_time = time.perf_counter()
         self.exponentiation_time += end_time - start_time
+        self.exponentiation_count += 1  # One exponentiation
+
         D_j, D_j_pr = {}, {}
+
         for j in S:
+            # Exponentiation: r_j = group.random()
+            start_time = time.perf_counter()
             r_j = group.random()
-            D_j[j] = g_r * (group.hash(j, G2) ** r_j)
+            end_time = time.perf_counter()
+            self.exponentiation_time += end_time - start_time
+            self.exponentiation_count += 1  # One exponentiation
+
+            # Exponentiation: hash_j = group.hash(j, G2) ** r_j
+            start_time = time.perf_counter()
+            hash_j = group.hash(j, G2)
+            hash_j_rj = hash_j ** r_j
+            end_time = time.perf_counter()
+            self.exponentiation_time += end_time - start_time
+            self.exponentiation_count += 1  # One exponentiation
+
+            # Multiplication: D_j[j] = g_r * hash_j_rj
+            start_time = time.perf_counter()
+            D_j[j] = g_r * hash_j_rj
+            end_time = time.perf_counter()
+            self.multiplication_time += end_time - start_time
+            self.multiplication_count += 1  # One multiplication
+
+            # Exponentiation: D_j_pr[j] = pk['g'] ** r_j
+            start_time = time.perf_counter()
             D_j_pr[j] = pk['g'] ** r_j
+            end_time = time.perf_counter()
+            self.exponentiation_time += end_time - start_time
+            self.exponentiation_count += 1  # One exponentiation
+
         return {'D': D, 'Dj': D_j, 'Djp': D_j_pr, 'S': S}
 
     def encrypt(self, pk, M, policy_str):
+        # Policy creation (Not timed)
         policy = util.createPolicy(policy_str)
+
+        # Exponentiation: s = group.random(ZR)
         start_time = time.perf_counter()
         s = group.random(ZR)
         end_time = time.perf_counter()
         self.exponentiation_time += end_time - start_time
+        self.exponentiation_count += 1  # One exponentiation
+
+        # Exponentiation: C = pk['h'] ** s
         start_time = time.perf_counter()
         C = pk['h'] ** s
         end_time = time.perf_counter()
         self.exponentiation_time += end_time - start_time
+        self.exponentiation_count += 1  # One exponentiation
+
         C_y, C_y_pr = {}, {}
         shares = util.calculateSharesDict(s, policy)
 
         for i in shares.keys():
             j = util.strip_index(i)
+
+            # Exponentiation: C_y[i] = pk['g'] ** shares[i]
             start_time = time.perf_counter()
             C_y[i] = pk['g'] ** shares[i]
             end_time = time.perf_counter()
             self.exponentiation_time += end_time - start_time
+            self.exponentiation_count += 1  # One exponentiation
+
+            # Exponentiation: C_y_pr[i] = group.hash(j, G2) ** shares[i]
             start_time = time.perf_counter()
             C_y_pr[i] = group.hash(j, G2) ** shares[i]
             end_time = time.perf_counter()
             self.exponentiation_time += end_time - start_time
+            self.exponentiation_count += 1  # One exponentiation
+
+        # Exponentiation: e_gg_alpha_s = pk['e_gg_alpha'] ** s
+        start_time = time.perf_counter()
+        e_gg_alpha_s = pk['e_gg_alpha'] ** s
+        end_time = time.perf_counter()
+        self.exponentiation_time += end_time - start_time
+        self.exponentiation_count += 1  # One exponentiation
+
+        # Multiplication: C_tilde = e_gg_alpha_s * M
+        start_time = time.perf_counter()
+        C_tilde = e_gg_alpha_s * M
+        end_time = time.perf_counter()
+        self.multiplication_time += end_time - start_time
+        self.multiplication_count += 1  # One multiplication
 
         return {
-            'C_tilde': (pk['e_gg_alpha'] ** s) * M,
+            'C_tilde': C_tilde,
             'C': C,
             'Cy': C_y,
             'Cyp': C_y_pr,
@@ -127,17 +218,113 @@ class CPabe_BSW07(ABEnc):
         }
 
     def decrypt(self, pk, sk, ct):
+        # Policy creation (Not timed)
         policy = util.createPolicy(ct['policy'])
+
+        # Prune the policy (Not timed)
         pruned_list = util.prune(policy, sk['S'])
+
         if pruned_list == False:
             return False
+
+        # Get coefficients (Not timed)
         z = util.getCoefficients(policy)
-        A = 1
+
+        A = group.init(GT, 1)  # Initialize A in GT
+
         for i in pruned_list:
             j = i.getAttributeAndIndex()
             k = i.getAttribute()
-            A *= (pair(ct['Cy'][j], sk['Dj'][k]) / pair(sk['Djp'][k], ct['Cyp'][j])) ** z[j]
-        return ct['C_tilde'] / (pair(ct['C'], sk['D']) / A)
+
+            # Pairing: pair1 = pair(ct['Cy'][j], sk['Dj'][k])
+            start_time = time.perf_counter()
+            pair1 = pair(ct['Cy'][j], sk['Dj'][k])
+            end_time = time.perf_counter()
+            self.pairing_time += end_time - start_time
+            self.pairing_count += 1  # One pairing
+
+            # Pairing: pair2 = pair(sk['Djp'][k], ct['Cyp'][j])
+            start_time = time.perf_counter()
+            pair2 = pair(sk['Djp'][k], ct['Cyp'][j])
+            end_time = time.perf_counter()
+            self.pairing_time += end_time - start_time
+            self.pairing_count += 1  # One pairing
+
+            # Division: ratio = pair1 / pair2 (treated as multiplication for timing)
+            start_time = time.perf_counter()
+            ratio = pair1 / pair2
+            end_time = time.perf_counter()
+            self.multiplication_time += end_time - start_time
+            self.multiplication_count += 1  # One multiplication
+
+            # Exponentiation: ratio_z = ratio ** z[j]
+            start_time = time.perf_counter()
+            ratio_z = ratio ** z[j]
+            end_time = time.perf_counter()
+            self.exponentiation_time += end_time - start_time
+            self.exponentiation_count += 1  # One exponentiation
+
+            # Multiplication: A *= ratio_z
+            start_time = time.perf_counter()
+            A *= ratio_z
+            end_time = time.perf_counter()
+            self.multiplication_time += end_time - start_time
+            self.multiplication_count += 1  # One multiplication
+
+        # Pairing: pair_final = pair(ct['C'], sk['D'])
+        start_time = time.perf_counter()
+        pair_final = pair(ct['C'], sk['D'])
+        end_time = time.perf_counter()
+        self.pairing_time += end_time - start_time
+        self.pairing_count += 1  # One pairing
+
+        # Division: denominator = pair_final / A (treated as multiplication for timing)
+        start_time = time.perf_counter()
+        denominator = pair_final / A
+        end_time = time.perf_counter()
+        self.multiplication_time += end_time - start_time
+        self.multiplication_count += 1  # One multiplication
+
+        # Final Division: decrypted = ct['C_tilde'] / denominator (treated as multiplication for timing)
+        start_time = time.perf_counter()
+        decrypted = ct['C_tilde'] / denominator
+        end_time = time.perf_counter()
+        self.multiplication_time += end_time - start_time
+        self.multiplication_count += 1  # One multiplication
+
+        return decrypted
+
+    def report_timings(self):
+        print("\n=== CP-ABE Operation Timings ===")
+        
+        if self.pairing_count > 0:
+            total_pairing_ms = self.pairing_time * 1000
+            print(f"Bilinear Pairings Total Time: {total_pairing_ms:.3f} ms over {self.pairing_count} operations")
+        else:
+            print("Bilinear Pairings Total Time: 0.000 ms over 0 operations")
+        
+        if self.exponentiation_count > 0:
+            total_exponentiation_ms = self.exponentiation_time * 1000
+            print(f"Exponentiations Total Time: {total_exponentiation_ms:.3f} ms over {self.exponentiation_count} operations")
+        else:
+            print("Exponentiations Total Time: 0.000 ms over 0 operations")
+        
+        if self.multiplication_count > 0:
+            total_multiplication_ms = self.multiplication_time * 1000
+            print(f"Multiplications Total Time: {total_multiplication_ms:.3f} ms over {self.multiplication_count} operations")
+        else:
+            print("Multiplications Total Time: 0.000 ms over 0 operations")
+        
+        print("=================================\n")
+    
+        # Reset timers and counters after reporting
+        self.pairing_time = 0.0
+        self.exponentiation_time = 0.0
+        self.multiplication_time = 0.0
+        
+        self.pairing_count = 0
+        self.exponentiation_count = 0
+        self.multiplication_count = 0
 
 # Tkinter GUI
 def select_file():
@@ -151,7 +338,7 @@ def blur_faces(image_path):
     # Reset maps for new image
     hash_map = {}
     ciphertext_map = []
-    
+
     # Load and prepare image
     original_image = cv2.imread(image_path)
     if original_image is None:
@@ -162,7 +349,7 @@ def blur_faces(image_path):
     # Load face detector model
     prototxt_path = 'deploy.prototxt.txt'  # Updated to relative path
     model_path = 'res10_300x300_ssd_iter_140000.caffemodel'  # Updated to relative path
-    
+
     if not os.path.exists(prototxt_path) or not os.path.exists(model_path):
         messagebox.showerror("Error", "Model files not found.")
         return
@@ -175,7 +362,7 @@ def blur_faces(image_path):
 
     blurred_image = original_image.copy()
     face_regions = []
-    
+
     # Process each detected face
     for i in range(detections.shape[2]):
         confidence = detections[0, 0, i, 2]
@@ -202,6 +389,9 @@ def blur_faces(image_path):
                 policy_str = policies[(face_index - 1) % len(policies)]
                 ct = cpabe.encrypt(pk, M, policy_str)
                 ciphertext_map.append(ct)
+
+                # After encryption, report timing
+                cpabe.report_timings()  # Reports timings in ms
 
     # Sort faces and update display
     face_regions.sort(key=lambda box: box[0])
@@ -255,6 +445,9 @@ def unblur_face(face_number):
         messagebox.showerror("Error", f"Decryption failed:\n{str(e)}")
         return
 
+    # Report timing after decryption
+    cpabe.report_timings()  # Reports timings in ms
+
     # Verify the decrypted message against the stored hash
     if rec_msg:
         expected_msg = hash_map.get(face_number, None)
@@ -291,9 +484,22 @@ def update_display(image):
     label_image.config(image=image_tk)
     label_image.image = image_tk
 
+def benchmark_multiplications():
+    test_element1 = group.random(GT)
+    test_element2 = group.random(GT)
+    num_repeats = 100000  # Number of multiplications
+    total_time = 0.0
+    for _ in range(num_repeats):
+        start_time = time.perf_counter()
+        result = test_element1 * test_element2
+        end_time = time.perf_counter()
+        total_time += end_time - start_time
+    average_time_ms = (total_time / num_repeats) * 1000
+    print(f"Average Multiplication Time: {average_time_ms:.6f} ms over {num_repeats} repetitions")
+
 def main():
     initialize_cpabe()
-
+    
     # Tkinter setup
     root = tk.Tk()
     root.title("Face Blurring Tool")
@@ -311,6 +517,9 @@ def main():
     frame_buttons.pack(side=tk.BOTTOM, fill=tk.X, pady=10, anchor='s')
     
     root.mainloop()
+    
+    # Optional: Run multiplication benchmark after GUI closes
+    # benchmark_multiplications()
 
 if __name__ == "__main__":
     main()
