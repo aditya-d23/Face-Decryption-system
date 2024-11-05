@@ -18,9 +18,9 @@ pk = None
 mk = None
 face_regions = []
 policies = [
-    '((four or three) and (three or one))',
-    '((ritesh and praveen) or (aditya and ritesh))',
-    '((attributeA and attributeB) or attributeC)'
+    'attributeA',
+    'attributeA',
+    'attributeA'
 ]  # Array to store unique policies for each face
 original_image = None
 blurred_image = None
